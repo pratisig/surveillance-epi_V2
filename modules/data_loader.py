@@ -28,7 +28,7 @@ class DataManager:
             st.session_state.dm_geodata = None
             st.session_state.dm_climate_data = None
             st.session_state.dm_worldpop_data = None
-            st.session_state.dm_epidemio_data = None
+            st.session_state.dm_epidemio_data = {}  # DICT au lieu de None
             st.session_state.dm_vaccination_data = None
             st.session_state.dm_last_update = None
             st.session_state.dm_source_info = {}
@@ -56,11 +56,11 @@ class DataManager:
     
     def get_geodata(self):
         """Récupère les données géographiques"""
-        return st.session_state.dm_geodata
+        return st.session_state.get('dm_geodata')
     
     def has_geodata(self):
         """Vérifie si des données géographiques sont chargées"""
-        return st.session_state.dm_geodata is not None
+        return st.session_state.get('dm_geodata') is not None
     
     # ============================================================
     # DONNÉES CLIMATIQUES (NASA POWER)
@@ -84,11 +84,11 @@ class DataManager:
     
     def get_climate_data(self):
         """Récupère les données climatiques"""
-        return st.session_state.dm_climate_data
+        return st.session_state.get('dm_climate_data')
     
     def has_climate_data(self):
         """Vérifie si des données climatiques sont chargées"""
-        return st.session_state.dm_climate_data is not None
+        return st.session_state.get('dm_climate_data') is not None
     
     # ============================================================
     # DONNÉES WORLDPOP (GEE)
@@ -112,11 +112,11 @@ class DataManager:
     
     def get_worldpop_data(self):
         """Récupère les données WorldPop"""
-        return st.session_state.dm_worldpop_data
+        return st.session_state.get('dm_worldpop_data')
     
     def has_worldpop_data(self):
         """Vérifie si des données WorldPop sont chargées"""
-        return st.session_state.dm_worldpop_data is not None
+        return st.session_state.get('dm_worldpop_data') is not None
     
     # ============================================================
     # DONNÉES ÉPIDÉMIOLOGIQUES
@@ -130,30 +130,48 @@ class DataManager:
             df (DataFrame): Linelists (cases, deaths, health_area, week)
             disease (str): "paludisme" ou "rougeole"
         """
-        if 'dm_epidemio_data' not in st.session_state:
+        # S'assurer que dm_epidemio_data existe et est un dict
+        if 'dm_epidemio_data' not in st.session_state or st.session_state.dm_epidemio_data is None:
             st.session_state.dm_epidemio_data = {}
         
         st.session_state.dm_epidemio_data[disease] = df
+        
+        # Calculer date range selon les colonnes disponibles
+        date_range = None
+        total_cases = None
+        
+        if 'week_' in df.columns:
+            date_range = (df['week_'].min(), df['week_'].max())
+        elif 'Semaine_Epi' in df.columns:
+            date_range = (df['Semaine_Epi'].min(), df['Semaine_Epi'].max())
+        
+        if 'cases' in df.columns:
+            total_cases = df['cases'].sum()
+        elif 'Cas_Total' in df.columns:
+            total_cases = df['Cas_Total'].sum()
+        else:
+            total_cases = len(df)  # Nombre de lignes si pas de colonne cas
+        
         st.session_state.dm_source_info[f'epidemio_{disease}'] = {
             'disease': disease,
             'n_records': len(df),
             'timestamp': datetime.now(),
-            'date_range': (df['week_'].min() if 'week_' in df.columns else None,
-                          df['week_'].max() if 'week_' in df.columns else None),
-            'total_cases': df['cases'].sum() if 'cases' in df.columns else None
+            'date_range': date_range,
+            'total_cases': total_cases
         }
         st.session_state.dm_last_update = datetime.now()
     
     def get_epidemio_data(self, disease="paludisme"):
         """Récupère les données épidémiologiques pour une maladie"""
-        if 'dm_epidemio_data' in st.session_state:
-            return st.session_state.dm_epidemio_data.get(disease)
-        return None
+        epidemio_data = st.session_state.get('dm_epidemio_data', {})
+        return epidemio_data.get(disease)
     
     def has_epidemio_data(self, disease="paludisme"):
         """Vérifie si des données épidémio sont chargées pour une maladie"""
-        return (hasattr(st.session_state, 'dm_epidemio_data') and 
-                disease in st.session_state.dm_epidemio_data)
+        epidemio_data = st.session_state.get('dm_epidemio_data')
+        if epidemio_data is None or not isinstance(epidemio_data, dict):
+            return False
+        return disease in epidemio_data and epidemio_data[disease] is not None
     
     # ============================================================
     # DONNÉES VACCINATION
@@ -167,20 +185,25 @@ class DataManager:
             df (DataFrame): Couverture vaccinale par aire de santé
         """
         st.session_state.dm_vaccination_data = df
+        
+        coverage_mean = None
+        if 'Taux_Vaccination' in df.columns:
+            coverage_mean = df['Taux_Vaccination'].mean()
+        
         st.session_state.dm_source_info['vaccination'] = {
             'n_records': len(df),
             'timestamp': datetime.now(),
-            'coverage_mean': df['Taux_Vaccination'].mean() if 'Taux_Vaccination' in df.columns else None
+            'coverage_mean': coverage_mean
         }
         st.session_state.dm_last_update = datetime.now()
     
     def get_vaccination_data(self):
         """Récupère les données de vaccination"""
-        return st.session_state.dm_vaccination_data
+        return st.session_state.get('dm_vaccination_data')
     
     def has_vaccination_data(self):
         """Vérifie si des données de vaccination sont chargées"""
-        return st.session_state.dm_vaccination_data is not None
+        return st.session_state.get('dm_vaccination_data') is not None
     
     # ============================================================
     # UTILITAIRES
@@ -189,14 +212,14 @@ class DataManager:
     def get_summary(self):
         """Retourne un résumé de toutes les données chargées"""
         summary = {
-            'last_update': st.session_state.dm_last_update,
+            'last_update': st.session_state.get('dm_last_update'),
             'geodata': self.has_geodata(),
             'climate': self.has_climate_data(),
             'worldpop': self.has_worldpop_data(),
             'epidemio_paludisme': self.has_epidemio_data('paludisme'),
             'epidemio_rougeole': self.has_epidemio_data('rougeole'),
             'vaccination': self.has_vaccination_data(),
-            'source_info': st.session_state.dm_source_info
+            'source_info': st.session_state.get('dm_source_info', {})
         }
         return summary
     
@@ -205,7 +228,7 @@ class DataManager:
         st.session_state.dm_geodata = None
         st.session_state.dm_climate_data = None
         st.session_state.dm_worldpop_data = None
-        st.session_state.dm_epidemio_data = None
+        st.session_state.dm_epidemio_data = {}
         st.session_state.dm_vaccination_data = None
         st.session_state.dm_last_update = None
         st.session_state.dm_source_info = {}
@@ -224,11 +247,12 @@ class DataManager:
         elif data_type == "worldpop":
             st.session_state.dm_worldpop_data = None
         elif data_type == "epidemio":
-            st.session_state.dm_epidemio_data = None
+            st.session_state.dm_epidemio_data = {}
         elif data_type == "vaccination":
             st.session_state.dm_vaccination_data = None
         
         # Supprimer les infos sources
-        keys_to_remove = [k for k in st.session_state.dm_source_info.keys() if data_type in k]
+        source_info = st.session_state.get('dm_source_info', {})
+        keys_to_remove = [k for k in source_info.keys() if data_type in k]
         for key in keys_to_remove:
             del st.session_state.dm_source_info[key]
