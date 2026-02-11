@@ -547,27 +547,84 @@ else:
     
     if uploaded_cases is not None:
         try:
-            df_cases = pd.read_csv(uploaded_cases)
+            # Lire le CSV avec différents encodages possibles
+            try:
+                df_cases = pd.read_csv(uploaded_cases, encoding='utf-8')
+            except UnicodeDecodeError:
+                df_cases = pd.read_csv(uploaded_cases, encoding='latin1')
+            
+            st.sidebar.info(f"📋 Colonnes détectées : {', '.join(df_cases.columns)}")
             
             # AMÉLIORATION : Détection intelligente des colonnes
             COLUMN_MAPPING = {
-                'health_area': ['health_area', 'HEALTHAREA', 'aire_sante', 'Aire_Sante', 'name_fr', 'NAME', 'nom', 'district', 'location'],
-                'week_': ['week_', 'week', 'semaine', 'Semaine', 'Semaine_Epi', 'epi_week', 'epiweek', 'SE'],
-                'cases': ['cases', 'cas', 'Cas', 'CAS', 'Cas_Total', 'nb_cas', 'nombre_cas'],
-                'deaths': ['deaths', 'deces', 'Deces', 'DECES', 'Deces_Total', 'nb_deces', 'nombre_deces']
+                'health_area': [
+                    'health_area', 'HEALTH_AREA', 'HealthArea',
+                    'healtharea', 'HEALTHAREA',
+                    'aire_sante', 'Aire_Sante', 'AIRE_SANTE', 'airesante',
+                    'name_fr', 'NAME_FR', 'name', 'NAME',
+                    'nom', 'NOM', 'Nom',
+                    'district', 'DISTRICT', 'District',
+                    'location', 'LOCATION', 'Location',
+                    'zone', 'ZONE', 'Zone',
+                    'area', 'AREA', 'Area'
+                ],
+                'week_': [
+                    'week_', 'WEEK_', 'Week_',
+                    'week', 'WEEK', 'Week',
+                    'semaine', 'SEMAINE', 'Semaine',
+                    'Semaine_Epi', 'semaine_epi', 'SEMAINE_EPI',
+                    'epi_week', 'EPI_WEEK', 'EpiWeek',
+                    'epiweek', 'EPIWEEK',
+                    'SE', 'se', 'Se',
+                    'S', 's',
+                    'wk', 'WK', 'Wk',
+                    'num_semaine', 'NUM_SEMAINE', 'NumSemaine'
+                ],
+                'cases': [
+                    'cases', 'CASES', 'Cases',
+                    'cas', 'CAS', 'Cas',
+                    'Cas_Total', 'cas_total', 'CAS_TOTAL',
+                    'nb_cas', 'NB_CAS', 'NbCas',
+                    'nombre_cas', 'NOMBRE_CAS', 'NombreCas',
+                    'total_cases', 'TOTAL_CASES', 'TotalCases',
+                    'confirmed_cases', 'CONFIRMED_CASES',
+                    'cas_confirmes', 'CAS_CONFIRMES',
+                    'nbr_cas', 'NBR_CAS'
+                ],
+                'deaths': [
+                    'deaths', 'DEATHS', 'Deaths',
+                    'deces', 'DECES', 'Deces', 'Décès', 'DÉCÈS',
+                    'Deces_Total', 'deces_total', 'DECES_TOTAL',
+                    'nb_deces', 'NB_DECES', 'NbDeces',
+                    'nombre_deces', 'NOMBRE_DECES', 'NombreDeces',
+                    'total_deaths', 'TOTAL_DEATHS',
+                    'morts', 'MORTS', 'Morts',
+                    'nbr_deces', 'NBR_DECES'
+                ]
             }
             
             # Renommer automatiquement
             rename_dict = {}
+            found_cols = {'health_area': False, 'week_': False, 'cases': False, 'deaths': False}
+            
             for standard_col, possible_cols in COLUMN_MAPPING.items():
                 for col in possible_cols:
-                    if col in df_cases.columns and col != standard_col:
-                        rename_dict[col] = standard_col
+                    if col in df_cases.columns:
+                        if col != standard_col:
+                            rename_dict[col] = standard_col
+                        found_cols[standard_col] = True
                         break
             
             if rename_dict:
                 df_cases = df_cases.rename(columns=rename_dict)
-                st.sidebar.info(f"🔄 Colonnes renommées : {', '.join(rename_dict.keys())}")
+                st.sidebar.success(f"🔄 Colonnes renommées : {', '.join(rename_dict.keys())}")
+            
+            # Afficher le statut de détection
+            st.sidebar.markdown("**Statut de détection :**")
+            for col, found in found_cols.items():
+                if col != 'deaths':  # deaths est optionnel
+                    icon = "✅" if found else "❌"
+                    st.sidebar.markdown(f"{icon} `{col}`")
             
             # Vérifier les colonnes obligatoires APRÈS renommage
             required_cols = ['health_area', 'week_', 'cases']
@@ -575,25 +632,75 @@ else:
             
             if missing_cols:
                 st.sidebar.error(f"❌ Colonnes manquantes après détection : {', '.join(missing_cols)}")
-                st.sidebar.info(f"📋 Colonnes détectées : {', '.join(df_cases.columns)}")
+                
+                # Afficher un tableau d'aide
+                st.sidebar.markdown("---")
+                st.sidebar.markdown("**📋 Colonnes détectées dans votre fichier :**")
+                for col in df_cases.columns:
+                    st.sidebar.code(col)
+                
+                st.sidebar.markdown("---")
+                st.sidebar.markdown("**💡 Solutions :**")
+                st.sidebar.markdown("""
+                1. Vérifiez que votre CSV contient bien des colonnes pour :
+                   - **Aire de santé** (ex: health_area, aire_sante, nom)
+                   - **Semaine** (ex: week_, semaine, SE)
+                   - **Cas** (ex: cases, cas, nb_cas)
+                
+                2. Exemple de format attendu :
+                ```csv
+                health_area,week_,cases,deaths
+                Dakar Centre,1,45,2
+                Dakar Centre,2,52,1
+                ```
+                
+                3. Ou renommez manuellement vos colonnes avant l'upload
+                """)
+                
                 df_cases = None
             else:
                 # Ajouter colonne deaths si absente
                 if 'deaths' not in df_cases.columns:
                     df_cases['deaths'] = 0
+                    st.sidebar.info("ℹ️ Colonne 'deaths' créée (valeurs = 0)")
                 
                 # Normaliser le format de semaine
                 df_cases['weeknum'] = normalize_week_format(df_cases['week_'])
                 
+                # Validation des données
+                n_rows_before = len(df_cases)
+                
+                # Supprimer lignes avec valeurs manquantes dans colonnes critiques
+                df_cases = df_cases.dropna(subset=['health_area', 'weeknum', 'cases'])
+                
+                # Convertir cases et deaths en numériques
+                df_cases['cases'] = pd.to_numeric(df_cases['cases'], errors='coerce').fillna(0).astype(int)
+                df_cases['deaths'] = pd.to_numeric(df_cases['deaths'], errors='coerce').fillna(0).astype(int)
+                
+                # Supprimer les valeurs négatives
+                df_cases = df_cases[df_cases['cases'] >= 0]
+                df_cases = df_cases[df_cases['deaths'] >= 0]
+                
+                n_rows_after = len(df_cases)
+                
+                if n_rows_before != n_rows_after:
+                    st.sidebar.warning(f"⚠️ {n_rows_before - n_rows_after} lignes supprimées (valeurs manquantes ou invalides)")
+                
+                # Stocker dans session_state
                 st.session_state.df_cases = df_cases
                 
                 if MODULES_AVAILABLE and dm:
                     dm.set_epidemio_data(df_cases, disease='paludisme')
                 
                 st.sidebar.success(f"✅ {len(df_cases)} enregistrements chargés")
+                
+                # Afficher un aperçu
+                with st.sidebar.expander("👀 Aperçu des données"):
+                    st.dataframe(df_cases[['health_area', 'week_', 'weeknum', 'cases', 'deaths']].head(10))
         
         except Exception as e:
-            st.sidebar.error(f"❌ Erreur de lecture : {str(e)}")
+            st.sidebar.error(f"❌ Erreur de lecture CSV : {str(e)}")
+            st.sidebar.code(f"Détails : {type(e).__name__}")
             df_cases = None
     else:
         df_cases = None
@@ -605,9 +712,6 @@ if st.session_state.df_cases is not None:
 else:
     df_cases = None
 
-# ============================================================
-# SUITE DE app_paludisme.py - APRÈS CHARGEMENT DONNÉES ÉPIDÉMIO
-# ============================================================
 
 # ============================================================
 # Section 3 : Données Environnementales (RASTERS - CONSERVÉES)
